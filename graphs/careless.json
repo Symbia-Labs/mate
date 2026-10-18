@@ -1,0 +1,17 @@
+{
+  "params": [
+    {"id": "side", "min": 0, "max": 1, "default": 0, "doc": "Which side this personality plays: 0 White, 1 Black."},
+    {"id": "care", "min": 0, "max": 1, "default": 0.3, "doc": "How much it notices its own loose pieces. 1 is a clean player."}
+  ],
+  "modulators": [
+    {"id": "dice", "shape": "random", "rate": 1, "seed": 11}
+  ],
+  "parallel": [
+    {"node": {"block": "material"}},
+    {"node": {"block": "loose", "only": [1]}, "gain": "if(side < 0.5, 1, care + 0.2 * dice)"},
+    {"node": {"block": "loose", "only": [0]}, "gain": "if(side < 0.5, care + 0.2 * dice, 1)"},
+    {"node": {"block": "king"}, "gain": 0.5},
+    {"node": {"block": "mobility"}},
+    {"node": {"block": "pawns"}}
+  ]
+}

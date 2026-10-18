@@ -484,6 +484,59 @@ impl Board {
     pub fn depth(&self) -> usize {
         self.undo.len()
     }
+
+    /// Every piece of `by` that attacks `sq`, pinned or not.
+    pub fn attackers(&self, sq: Square, by: Color) -> Bitboard {
+        let s = sq as usize;
+        let them = by as usize;
+        let occ = self.all();
+        let pawns = match by {
+            Color::White => BLACK_PAWN[s],
+            Color::Black => WHITE_PAWN[s],
+        };
+        (pawns & self.bb[them][Piece::Pawn as usize])
+            | (KNIGHT[s] & self.bb[them][Piece::Knight as usize])
+            | (KING[s] & self.bb[them][Piece::King as usize])
+            | (bishop_attacks(s, occ)
+                & (self.bb[them][Piece::Bishop as usize] | self.bb[them][Piece::Queen as usize]))
+            | (rook_attacks(s, occ)
+                & (self.bb[them][Piece::Rook as usize] | self.bb[them][Piece::Queen as usize]))
+    }
+
+    /// The same position with the colors swapped and the board turned over, so White's score here is Black's
+    /// score there. The undo stack is not carried.
+    pub fn mirror(&self) -> Board {
+        let flip = |bb: Bitboard| bb.swap_bytes();
+        let mut m = Board {
+            bb: [[0; 6]; 2],
+            occ: [0; 2],
+            turn: self.turn.flip(),
+            castling: ((self.castling & (WK | WQ)) << 2) | ((self.castling & (BK | BQ)) >> 2),
+            ep: self.ep.map(|sq| sq ^ 56),
+            halfmove: self.halfmove,
+            fullmove: self.fullmove,
+            undo: Vec::new(),
+        };
+        for p in PIECES {
+            m.bb[0][p as usize] = flip(self.bb[1][p as usize]);
+            m.bb[1][p as usize] = flip(self.bb[0][p as usize]);
+        }
+        m.occ = [flip(self.occ[1]), flip(self.occ[0])];
+        m
+    }
+
+    /// 0 with every piece on the board, 1 with nothing but kings and pawns.
+    pub fn phase(&self) -> f32 {
+        let weight = |p: Piece, w: u32| {
+            (self.pieces(Color::White, p).count_ones() + self.pieces(Color::Black, p).count_ones())
+                * w
+        };
+        let now = weight(Piece::Knight, 1)
+            + weight(Piece::Bishop, 1)
+            + weight(Piece::Rook, 2)
+            + weight(Piece::Queen, 4);
+        (1.0 - now as f32 / 24.0).clamp(0.0, 1.0)
+    }
 }
 
 impl fmt::Display for Board {

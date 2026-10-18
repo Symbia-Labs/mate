@@ -1,0 +1,13 @@
+{
+  "params": [
+    {"id": "sharp", "min": 0, "max": 1, "default": 1, "doc": "How much loose pieces count."},
+    {"id": "safety", "min": 0, "max": 1, "default": 1, "doc": "How much king exposure counts."}
+  ],
+  "parallel": [
+    {"node": {"block": "material"}},
+    {"node": {"block": "loose"}, "gain": "sharp"},
+    {"node": {"block": "king"}, "gain": "safety"},
+    {"node": {"block": "mobility"}},
+    {"node": {"block": "pawns"}}
+  ]
+}
