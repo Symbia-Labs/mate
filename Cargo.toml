@@ -1,0 +1,21 @@
+[package]
+name = "chess"
+version = "0.1.0"
+edition = "2024"
+rust-version = "1.91"
+description = "A legible chess engine built as a graph of blocks, with gates."
+license = "MIT"
+publish = false
+
+[lib]
+name = "chess"
+path = "src/lib.rs"
+
+[[bin]]
+name = "perft"
+path = "src/bin/perft.rs"
+
+[dependencies]
+
+[profile.release]
+debug = 1
