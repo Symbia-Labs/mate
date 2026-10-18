@@ -537,7 +537,61 @@ impl Board {
             + weight(Piece::Queen, 4);
         (1.0 - now as f32 / 24.0).clamp(0.0, 1.0)
     }
+
+    /// A Zobrist hash of the position: pieces, side to move, castling rights and the en passant file.
+    pub fn hash(&self) -> u64 {
+        let mut h = 0u64;
+        for c in 0..2 {
+            for p in 0..6 {
+                let mut bb = self.bb[c][p];
+                while bb != 0 {
+                    let sq = bb.trailing_zeros() as usize;
+                    bb &= bb - 1;
+                    h ^= ZOBRIST[(c * 6 + p) * 64 + sq];
+                }
+            }
+        }
+        if self.turn == Color::Black {
+            h ^= ZOBRIST[768];
+        }
+        h ^= ZOBRIST[769 + self.castling as usize];
+        if let Some(ep) = self.ep {
+            h ^= ZOBRIST[785 + (ep % 8) as usize];
+        }
+        h
+    }
+
+    /// Whether the side to move has only a king, or a king and one minor piece, as does the other side.
+    pub fn bare(&self) -> bool {
+        let pawns_or_heavy = |c: Color| {
+            self.pieces(c, Piece::Pawn) | self.pieces(c, Piece::Rook) | self.pieces(c, Piece::Queen)
+        };
+        if pawns_or_heavy(Color::White) | pawns_or_heavy(Color::Black) != 0 {
+            return false;
+        }
+        let minors =
+            |c: Color| (self.pieces(c, Piece::Knight) | self.pieces(c, Piece::Bishop)).count_ones();
+        minors(Color::White) <= 1 && minors(Color::Black) <= 1
+    }
 }
+
+const fn build_zobrist() -> [u64; 793] {
+    let mut t = [0u64; 793];
+    let mut x = 0x5EED_1234_ABCD_9876u64;
+    let mut i = 0;
+    while i < 793 {
+        x = x.wrapping_add(0x9E37_79B9_7F4A_7C15);
+        let mut z = x;
+        z = (z ^ (z >> 30)).wrapping_mul(0xBF58_476D_1CE4_E5B9);
+        z = (z ^ (z >> 27)).wrapping_mul(0x94D0_49BB_1331_11EB);
+        t[i] = z ^ (z >> 31);
+        i += 1;
+    }
+    t
+}
+
+/// 768 piece-square keys, one side key, 16 castling keys, 8 en passant file keys.
+const ZOBRIST: [u64; 793] = build_zobrist();
 
 impl fmt::Display for Board {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {

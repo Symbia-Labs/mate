@@ -3,6 +3,7 @@
 //! build.
 //!
 //! B1: board, move generation, perft. B2: the block model, the expression language, the graph, PGN and render.
+//! B3: search, UCI, and the engine compiled for the browser.
 
 pub mod block;
 pub mod blocks;
@@ -13,8 +14,11 @@ pub mod json;
 pub mod movegen;
 pub mod perft;
 pub mod pgn;
+pub mod search;
 pub mod spec;
 pub mod tables;
+#[cfg(target_arch = "wasm32")]
+pub mod wasm;
 
 pub use block::{ArgInfo, Block, BlockInfo, Frame};
 pub use board::{Board, Color, Move, MoveKind, Piece, Square};

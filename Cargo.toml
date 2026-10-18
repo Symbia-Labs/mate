@@ -10,6 +10,7 @@ publish = false
 [lib]
 name = "chess"
 path = "src/lib.rs"
+crate-type = ["rlib", "cdylib"]
 
 [[bin]]
 name = "perft"
@@ -19,7 +20,19 @@ path = "src/bin/perft.rs"
 name = "render"
 path = "src/bin/render.rs"
 
+[[bin]]
+name = "uci"
+path = "src/bin/uci.rs"
+
 [dependencies]
 
 [profile.release]
 debug = 1
+
+[profile.wasm]
+inherits = "release"
+debug = 0
+opt-level = "s"
+lto = true
+panic = "abort"
+codegen-units = 1
