@@ -1,1 +1,7 @@
 /target
+/.tools
+/matches
+/bot/games
+/dist
+/bot/*.log
+__pycache__/

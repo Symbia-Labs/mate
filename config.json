@@ -1,0 +1,162 @@
+{
+    "resign": {
+        "move_count": 4,
+        "score": 800,
+        "twosided": false,
+        "enabled": true
+    },
+    "draw": {
+        "move_number": 60,
+        "move_count": 10,
+        "score": 5,
+        "enabled": true
+    },
+    "maxmoves": {
+        "move_count": 1,
+        "enabled": false
+    },
+    "tb_adjudication": {
+        "syzygy_dirs": "",
+        "max_pieces": 0,
+        "ignore_50_move_rule": false,
+        "enabled": false
+    },
+    "opening": {
+        "file": "/Users/briangilmore/chess/.tools/noob_3moves.epd",
+        "format": 0,
+        "order": 0,
+        "plies": -1,
+        "start": 1
+    },
+    "pgn": {
+        "additional_lines_rgx": [],
+        "event_name": "B4 check 60+0.6 sf1900",
+        "site": "?",
+        "file": "/Users/briangilmore/chess/matches/check/sf1900.pgn",
+        "notation": 0,
+        "append_file": false,
+        "track_nodes": false,
+        "track_seldepth": false,
+        "track_nps": false,
+        "track_hashfull": false,
+        "track_tbhits": false,
+        "track_timeleft": false,
+        "track_latency": false,
+        "track_pv": false,
+        "min": false,
+        "crc": false
+    },
+    "epd": {
+        "file": "",
+        "append_file": true
+    },
+    "sprt": {
+        "alpha": 0.0,
+        "beta": 0.0,
+        "elo0": 0.0,
+        "elo1": 0.0,
+        "model": "normalized",
+        "enabled": false
+    },
+    "config_name": "config.json",
+    "output": 0,
+    "seed": 20261019,
+    "variant": 0,
+    "type": 0,
+    "gauntlet_seeds": 1,
+    "ratinginterval": 10,
+    "scoreinterval": 1,
+    "wait": 0,
+    "autosaveinterval": 20,
+    "games": 2,
+    "rounds": 100,
+    "concurrency": 8,
+    "force_concurrency": false,
+    "recover": false,
+    "noswap": false,
+    "reverse": false,
+    "report_penta": true,
+    "affinity": false,
+    "check_mate_pvs": false,
+    "show_latency": false,
+    "log": {
+        "file": "",
+        "level": 3,
+        "append_file": true,
+        "compress": false,
+        "realtime": true,
+        "engine_coms": false
+    },
+    "engines": [
+        {
+            "name": "chess",
+            "dir": "",
+            "cmd": "/Users/briangilmore/chess/target/release/uci",
+            "args": "",
+            "restart": false,
+            "options": [],
+            "limit": {
+                "tc": {
+                    "increment": 600,
+                    "fixed_time": 0,
+                    "time": 60000,
+                    "moves": 0,
+                    "timemargin": 0
+                },
+                "nodes": 0,
+                "plies": 0
+            },
+            "variant": 0
+        },
+        {
+            "name": "sf1900",
+            "dir": "",
+            "cmd": "/Users/briangilmore/chess/.tools/stockfish/stockfish-macos-universal",
+            "args": "",
+            "restart": false,
+            "options": [
+                [
+                    "Threads",
+                    "1"
+                ],
+                [
+                    "Hash",
+                    "16"
+                ],
+                [
+                    "UCI_LimitStrength",
+                    "true"
+                ],
+                [
+                    "UCI_Elo",
+                    "1900"
+                ]
+            ],
+            "limit": {
+                "tc": {
+                    "increment": 600,
+                    "fixed_time": 0,
+                    "time": 60000,
+                    "moves": 0,
+                    "timemargin": 0
+                },
+                "nodes": 0,
+                "plies": 0
+            },
+            "variant": 0
+        }
+    ],
+    "stats": {
+        "chess vs sf1900": {
+            "wins": 111,
+            "losses": 85,
+            "draws": 4,
+            "penta_WW": 32,
+            "penta_WD": 2,
+            "penta_WL": 45,
+            "penta_DD": 0,
+            "penta_LD": 2,
+            "penta_LL": 19
+        }
+    }
+}

@@ -1,6 +1,8 @@
 //! The UCI front end: the engine as any chess GUI or the Lichess bot sees it.
 //!
-//! Options: `Graph` (a personality file, or `default`) and one string option per graph parameter.
+//! Options: `Graph` (a personality file, or `default`), `Narrate` (before `bestmove`, print one line
+//! `info string say: <the last move in the position> | <the move chosen>`; off by default) and one string option
+//! per graph parameter.
 //! `go` takes depth, nodes, movetime, wtime/btime/winc/binc and infinite.
 
 use chess::board::{Board, Move};
@@ -29,6 +31,9 @@ fn main() {
     let mut out = std::io::stdout();
     let mut graph_path = String::from("default");
     let mut settings: Vec<(String, f32)> = Vec::new();
+    let mut narrate = false;
+    // The board before the last move in the `position` command, and that move, for `Narrate`.
+    let mut last: Option<(Board, Move)> = None;
     let mut board = Board::start();
     let mut history: Vec<u64> = vec![board.hash()];
     let stop = Arc::new(AtomicBool::new(false));
@@ -43,6 +48,7 @@ fn main() {
                 println!("id name chess (graph)");
                 println!("id author Symbia Labs");
                 println!("option name Graph type string default default");
+                println!("option name Narrate type check default false");
                 if let Ok(g) = load(&graph_path) {
                     for p in g.params() {
                         println!("option name {} type string default {}", p.id, p.default);
@@ -63,6 +69,8 @@ fn main() {
                             Ok(_) => graph_path = value,
                             Err(e) => println!("info string {}", e),
                         }
+                    } else if name == "Narrate" {
+                        narrate = value.eq_ignore_ascii_case("true");
                     } else if let Ok(x) = value.parse::<f32>() {
                         settings.retain(|(k, _)| *k != name);
                         settings.push((name, x));
@@ -70,6 +78,7 @@ fn main() {
                 }
             }
             "ucinewgame" => {
+                last = None;
                 board = Board::start();
                 history = vec![board.hash()];
             }
@@ -86,10 +95,15 @@ fn main() {
                     Board::start()
                 };
                 history = vec![board.hash()];
+                last = None;
                 if let Some(i) = moves_at {
-                    for m in &rest[i + 1..] {
+                    let listed = &rest[i + 1..];
+                    for (k, m) in listed.iter().enumerate() {
                         match uci_move(&mut board, m) {
                             Some(mv) => {
+                                if k + 1 == listed.len() {
+                                    last = Some((board.clone(), mv));
+                                }
                                 board.make(mv);
                                 history.push(board.hash());
                             }
@@ -141,6 +155,8 @@ fn main() {
                 searcher.root_ply = history.len() as u32 - 1;
                 stop.store(false, Ordering::Relaxed);
                 let mut b = board.clone();
+                let root = board.clone();
+                let theirs = last.clone();
                 worker = Some(std::thread::spawn(move || {
                     let r = searcher.search(&mut b, &limits, |r| {
                         let ms = r.elapsed.as_millis().max(1) as u64;
@@ -157,6 +173,19 @@ fn main() {
                                 .join(" ")
                         );
                     });
+                    if narrate {
+                        // Their move first, then mine, joined by a bar; the bot splits them again.
+                        let theirs = theirs.map(|(b, m)| chess::narrate::say_theirs(&b, m).text);
+                        let mine = chess::narrate::say(&root, &r).map(|s| s.text);
+                        let line = match (theirs, mine) {
+                            (Some(t), Some(s)) => Some(format!("{} | {}", t, s)),
+                            (Some(only), None) | (None, Some(only)) => Some(only),
+                            (None, None) => None,
+                        };
+                        if let Some(line) = line {
+                            println!("info string say: {}", line);
+                        }
+                    }
                     match r.best() {
                         Some(m) => println!("bestmove {}", m),
                         None => println!("bestmove 0000"),

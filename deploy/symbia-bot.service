@@ -1,0 +1,24 @@
+[Unit]
+Description=Symbia chess bot (lichess-bot running the Symbia engine)
+Wants=network-online.target
+After=network-online.target
+
+[Service]
+Type=simple
+User=symbia
+Group=symbia
+WorkingDirectory=@PREFIX@/.tools/lichess-bot
+# The file holds one line, LICHESS_BOT_TOKEN=..., and is readable by root only.
+EnvironmentFile=/etc/symbia/bot.env
+# lichess-bot looks for homemade.py beside itself; ours lives in bot/.
+ExecStartPre=/bin/cp @PREFIX@/bot/homemade.py @PREFIX@/.tools/lichess-bot/homemade.py
+ExecStart=@PREFIX@/.tools/lichess-bot/.venv/bin/python lichess-bot.py --config @PREFIX@/bot/config.yml --logfile @PREFIX@/bot/lichess-bot.log
+# The first SIGINT makes lichess-bot finish the games it is playing and then exit. A game can last the better part
+# of an hour, so systemd waits that long before it gives up and kills the process.
+KillSignal=SIGINT
+TimeoutStopSec=3600
+Restart=always
+RestartSec=15
+
+[Install]
+WantedBy=multi-user.target

@@ -3,7 +3,7 @@
 //! build.
 //!
 //! B1: board, move generation, perft. B2: the block model, the expression language, the graph, PGN and render.
-//! B3: search, UCI, and the engine compiled for the browser.
+//! B3: search, UCI, and the engine compiled for the browser. B6: a sentence for each move, for the game chat.
 
 pub mod block;
 pub mod blocks;
@@ -12,6 +12,7 @@ pub mod expr;
 pub mod graph;
 pub mod json;
 pub mod movegen;
+pub mod narrate;
 pub mod perft;
 pub mod pgn;
 pub mod search;
