@@ -5,3 +5,4 @@
 /dist
 /bot/*.log
 __pycache__/
+/tmp

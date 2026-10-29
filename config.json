@@ -30,9 +30,9 @@
     },
     "pgn": {
         "additional_lines_rgx": [],
-        "event_name": "B4 check 60+0.6 sf1900",
+        "event_name": "B4 b18_ladder_b18 10+0.1 sf1900",
         "site": "?",
-        "file": "/Users/briangilmore/chess/matches/check/sf1900.pgn",
+        "file": "/Users/briangilmore/chess/matches/b18_ladder_b18/sf1900.pgn",
         "notation": 0,
         "append_file": false,
         "track_nodes": false,
@@ -91,15 +91,15 @@
         {
             "name": "chess",
             "dir": "",
-            "cmd": "/Users/briangilmore/chess/target/release/uci",
+            "cmd": "/Users/briangilmore/chess/tmp/uci_b18",
             "args": "",
             "restart": false,
             "options": [],
             "limit": {
                 "tc": {
-                    "increment": 600,
+                    "increment": 100,
                     "fixed_time": 0,
-                    "time": 60000,
+                    "time": 10000,
                     "moves": 0,
                     "timemargin": 0
                 },
@@ -134,9 +134,9 @@
             ],
             "limit": {
                 "tc": {
-                    "increment": 600,
+                    "increment": 100,
                     "fixed_time": 0,
-                    "time": 60000,
+                    "time": 10000,
                     "moves": 0,
                     "timemargin": 0
                 },
@@ -148,15 +148,15 @@
     ],
     "stats": {
         "chess vs sf1900": {
-            "wins": 111,
-            "losses": 85,
-            "draws": 4,
-            "penta_WW": 32,
-            "penta_WD": 2,
-            "penta_WL": 45,
+            "wins": 88,
+            "losses": 107,
+            "draws": 5,
+            "penta_WW": 20,
+            "penta_WD": 1,
+            "penta_WL": 47,
             "penta_DD": 0,
-            "penta_LD": 2,
-            "penta_LL": 19
+            "penta_LD": 4,
+            "penta_LL": 28
         }
     }
 }

@@ -81,6 +81,20 @@ impl Report {
     }
 }
 
+/// The inverse of `Report::uci_score`: the score that `cp 12`, `mate 3` or `mate -2` stands for, as the search
+/// itself would have produced it, or `None` for a word or a distance that is not a score. The coach reads the
+/// tutor's report back from text with this.
+pub fn score_from_uci(kind: &str, value: i32) -> Option<i32> {
+    match kind {
+        "cp" if value.abs() < MATE_BOUND => Some(value),
+        // A mate in k for the side to move is delivered on its k-th move, at ply 2k - 1.
+        "mate" if (1..=500).contains(&value) => Some(MATE + 1 - 2 * value),
+        // Being mated in k happens at ply 2k.
+        "mate" if (-500..=-1).contains(&value) => Some(-MATE - 2 * value),
+        _ => None,
+    }
+}
+
 pub struct Searcher {
     pub graph: Graph,
     pub stop: Arc<AtomicBool>,
@@ -212,15 +226,11 @@ impl Searcher {
         self.aborted
     }
 
+    /// Whether the position is on the current line or was played earlier in the game. Every earlier position is
+    /// compared (B18: before, every other one, so a repeat with the root's side to move was missed); the hash includes
+    /// the side to move, so a position with the other side to move cannot match.
     fn repeated(&self, hash: u64) -> bool {
-        self.path.contains(&hash)
-            || self
-                .history
-                .iter()
-                .rev()
-                .skip(1)
-                .step_by(2)
-                .any(|h| *h == hash)
+        self.path.contains(&hash) || self.history.iter().rev().skip(1).any(|h| *h == hash)
     }
 
     fn negamax(&mut self, b: &mut Board, depth: i32, mut alpha: i32, beta: i32, ply: usize) -> i32 {
@@ -283,6 +293,34 @@ impl Searcher {
         self.nodes += 1;
         if self.out_of_time() {
             return 0;
+        }
+        // In check there is no standing pat: every legal move is searched, and with none the side is mated (B18:
+        // before, a mate on the last ply of the search was scored as the static evaluation).
+        if b.in_check() && ply < MAX_PLY - 2 {
+            let mut moves = legal_moves(b);
+            if moves.is_empty() {
+                return -MATE + ply as i32;
+            }
+            self.order(b, &mut moves, ply);
+            let mut best = -MATE - 1;
+            for mv in moves {
+                b.make(mv);
+                let score = -self.quiesce(b, -beta, -alpha, ply + 1);
+                b.unmake();
+                if self.aborted {
+                    return 0;
+                }
+                if score > best {
+                    best = score;
+                    if score > alpha {
+                        alpha = score;
+                    }
+                }
+                if alpha >= beta {
+                    break;
+                }
+            }
+            return best;
         }
         let stand = self.evaluate(b, ply);
         if stand >= beta {
@@ -396,6 +434,33 @@ mod tests {
     }
 
     #[test]
+    fn b18_a_mate_in_one_is_seen_at_depth_one() {
+        // B17 played g1h2 here at depth 1: the mate was on the last ply and quiescence stood pat in check.
+        let (m, s) = best("6k1/5ppp/8/8/8/8/8/R5K1 w - - 0 1", 1);
+        assert_eq!(m, "a1a8");
+        assert_eq!(s, MATE - 1);
+    }
+
+    #[test]
+    fn b18_a_mate_in_two_is_seen_at_depth_three() {
+        // B17 first saw this mate at depth 4.
+        let (_, s) = best("7k/8/8/8/8/8/R7/1R4K1 w - - 0 1", 3);
+        assert_eq!(s, MATE - 3);
+    }
+
+    #[test]
+    fn b18_repetition_is_checked_against_every_earlier_position() {
+        let mut s = Searcher::new(Graph::from_json(DEFAULT_GRAPH).unwrap());
+        s.history = vec![11, 22, 33];
+        assert!(
+            s.repeated(11),
+            "two plies back: the side to move at the root (missed before B18)"
+        );
+        assert!(s.repeated(22), "one ply back");
+        assert!(!s.repeated(44), "never played");
+    }
+
+    #[test]
     fn finds_a_mate_in_one_and_scores_it_as_mate() {
         let (m, s) = best("6k1/5ppp/8/8/8/8/8/R5K1 w - - 0 1", 2);
         assert_eq!(m, "a1a8");
@@ -409,6 +474,56 @@ mod tests {
             2,
         );
         assert_eq!(m, "d1d4");
+    }
+
+    fn report_with(score: i32) -> Report {
+        Report {
+            depth: 1,
+            score,
+            nodes: 0,
+            elapsed: Duration::ZERO,
+            pv: Vec::new(),
+        }
+    }
+
+    fn round_trip(score: i32) -> Option<i32> {
+        let text = report_with(score).uci_score();
+        let mut words = text.split(' ');
+        let kind = words.next()?;
+        let value: i32 = words.next()?.parse().ok()?;
+        score_from_uci(kind, value)
+    }
+
+    #[test]
+    fn a_score_written_as_uci_reads_back_as_the_same_score() {
+        for cp in -999..=999 {
+            assert_eq!(round_trip(cp), Some(cp), "cp {}", cp);
+        }
+        // Every mate the search can produce: the side to move mates at odd plies and is mated at even ones.
+        for k in 1..=MAX_PLY as i32 {
+            assert_eq!(
+                round_trip(MATE + 1 - 2 * k),
+                Some(MATE + 1 - 2 * k),
+                "mate {}",
+                k
+            );
+            assert_eq!(
+                round_trip(-MATE + 2 * k),
+                Some(-MATE + 2 * k),
+                "mate -{}",
+                k
+            );
+        }
+        assert_eq!(report_with(MATE - 1).uci_score(), "mate 1");
+        assert_eq!(report_with(-MATE + 2).uci_score(), "mate -1");
+    }
+
+    #[test]
+    fn text_that_is_not_a_score_reads_as_none() {
+        assert_eq!(score_from_uci("mate", 0), None);
+        assert_eq!(score_from_uci("mate", 501), None);
+        assert_eq!(score_from_uci("cp", MATE_BOUND), None);
+        assert_eq!(score_from_uci("lowerbound", 10), None);
     }
 
     #[test]

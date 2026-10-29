@@ -3,16 +3,26 @@
 //! Options: `Graph` (a personality file, or `default`), `Narrate` (before `bestmove`, print one line
 //! `info string say: <the last move in the position> | <the move chosen>`; off by default) and one string option
 //! per graph parameter.
+//! Sparring (B15): `Sparring` (off by default), `Opponent` (the opponent's rating) and `SparSeed`. With `Sparring` on,
+//! when she stands more than a pawn up the move may be a slightly worse one that leaves her closer to level (see
+//! `chess::spar`). With it off the engine answers exactly as before.
 //! `go` takes depth, nodes, movetime, wtime/btime/winc/binc and infinite.
+//!
+//! `uci coach` runs the coach instead of the engine: the bot's three commentary lanes (see `chess::coach`). It takes
+//! `depth=N` and `nodes=N` for the judge's searches, and `voice=every` for a line on every move in every lane (the
+//! B15 voice). The default is `voice=quiet` (B16): a lane speaks when something happened and says why, and writes
+//! `skip <ply> <lane>` when it has nothing to say.
 
-use chess::board::{Board, Move};
+use chess::board::{Board, Color, Move};
+use chess::coach::Mode;
 use chess::graph::{DEFAULT_GRAPH, Graph};
+use chess::judge::Settings;
 use chess::movegen::legal_moves;
-use chess::search::{Limits, Searcher};
+use chess::search::{Limits, Report, Searcher};
 use std::io::{BufRead, Write};
 use std::sync::Arc;
 use std::sync::atomic::{AtomicBool, Ordering};
-use std::time::Duration;
+use std::time::{Duration, Instant};
 
 fn load(path: &str) -> Result<Graph, String> {
     if path == "default" {
@@ -22,16 +32,84 @@ fn load(path: &str) -> Result<Graph, String> {
     }
 }
 
+/// The `info` line for a finished depth.
+fn info_line(r: &Report) -> String {
+    let ms = r.elapsed.as_millis().max(1) as u64;
+    format!(
+        "info depth {} score {} nodes {} nps {} time {} pv {}",
+        r.depth,
+        r.uci_score(),
+        r.nodes,
+        r.nodes * 1000 / ms,
+        ms,
+        r.pv.iter()
+            .map(|m| m.to_string())
+            .collect::<Vec<_>>()
+            .join(" ")
+    )
+}
+
 fn uci_move(b: &mut Board, text: &str) -> Option<Move> {
     legal_moves(b).into_iter().find(|m| m.to_string() == text)
 }
 
+/// The judge's limits from `depth=6 nodes=500000`, for measuring, and the voice from `voice=quiet` or
+/// `voice=every`; all are optional, and the voice is quiet unless it says otherwise.
+fn coach_settings(args: &[String]) -> Result<(Settings, Mode), String> {
+    let mut settings = Settings::default();
+    let mut mode = Mode::Quiet;
+    for arg in args {
+        match arg.split_once('=') {
+            Some(("voice", v)) => {
+                mode = Mode::parse(v)
+                    .ok_or_else(|| format!("not a voice: {} (use every or quiet)", v))?
+            }
+            Some(("depth", v)) => {
+                settings.depth = v.parse().map_err(|_| format!("not a depth: {}", v))?
+            }
+            Some(("nodes", v)) => {
+                settings.nodes = v.parse().map_err(|_| format!("not a node count: {}", v))?
+            }
+            _ => {
+                return Err(format!(
+                    "unknown argument: {} (use depth=N, nodes=N or voice=every|quiet)",
+                    arg
+                ));
+            }
+        }
+    }
+    Ok((settings, mode))
+}
+
 fn main() {
+    // `uci coach` is the commentary process: events in, chat lines out. See `chess::coach`.
+    if std::env::args().nth(1).as_deref() == Some("coach") {
+        let args: Vec<String> = std::env::args().skip(2).collect();
+        match coach_settings(&args) {
+            Ok((settings, mode)) => {
+                chess::coach::run_voiced(
+                    std::io::stdin().lock(),
+                    std::io::stdout(),
+                    settings,
+                    mode,
+                );
+            }
+            Err(why) => {
+                eprintln!("uci coach: {}", why);
+                std::process::exit(2);
+            }
+        }
+        return;
+    }
     let stdin = std::io::stdin();
     let mut out = std::io::stdout();
     let mut graph_path = String::from("default");
     let mut settings: Vec<(String, f32)> = Vec::new();
     let mut narrate = false;
+    // Sparring (B15). `opponent` is the opponent's rating and `spar_seed` varies the choices from game to game.
+    let mut sparring = false;
+    let mut opponent: i32 = 0;
+    let mut spar_seed: u64 = 0;
     // The board before the last move in the `position` command, and that move, for `Narrate`.
     let mut last: Option<(Board, Move)> = None;
     let mut board = Board::start();
@@ -49,6 +127,9 @@ fn main() {
                 println!("id author Symbia Labs");
                 println!("option name Graph type string default default");
                 println!("option name Narrate type check default false");
+                println!("option name Sparring type check default false");
+                println!("option name Opponent type spin default 0 min 0 max 4000");
+                println!("option name SparSeed type string default 0");
                 if let Ok(g) = load(&graph_path) {
                     for p in g.params() {
                         println!("option name {} type string default {}", p.id, p.default);
@@ -71,6 +152,12 @@ fn main() {
                         }
                     } else if name == "Narrate" {
                         narrate = value.eq_ignore_ascii_case("true");
+                    } else if name == "Sparring" {
+                        sparring = value.eq_ignore_ascii_case("true");
+                    } else if name == "Opponent" {
+                        opponent = value.parse().unwrap_or(0);
+                    } else if name == "SparSeed" {
+                        spar_seed = value.parse().unwrap_or(0);
                     } else if let Ok(x) = value.parse::<f32>() {
                         settings.retain(|(k, _)| *k != name);
                         settings.push((name, x));
@@ -154,25 +241,42 @@ fn main() {
                 searcher.history = history.clone();
                 searcher.root_ply = history.len() as u32 - 1;
                 stop.store(false, Ordering::Relaxed);
+                // Sparring is off with less than twenty seconds on the clock, and a search with no clock is not timed.
+                let my_clock = if board.turn == Color::White {
+                    limits.wtime
+                } else {
+                    limits.btime
+                };
+                let spar = if sparring
+                    && my_clock.is_none_or(|t| t.as_millis() as u64 >= chess::spar::MIN_CLOCK_MS)
+                {
+                    chess::spar::Settings::for_rating(opponent, spar_seed)
+                } else {
+                    None
+                };
+                let halted = stop.clone();
                 let mut b = board.clone();
                 let root = board.clone();
                 let theirs = last.clone();
                 worker = Some(std::thread::spawn(move || {
-                    let r = searcher.search(&mut b, &limits, |r| {
-                        let ms = r.elapsed.as_millis().max(1) as u64;
-                        println!(
-                            "info depth {} score {} nodes {} nps {} time {} pv {}",
-                            r.depth,
-                            r.uci_score(),
-                            r.nodes,
-                            r.nodes * 1000 / ms,
-                            ms,
-                            r.pv.iter()
-                                .map(|m| m.to_string())
-                                .collect::<Vec<_>>()
-                                .join(" ")
-                        );
-                    });
+                    let mut r = searcher.search(&mut b, &limits, |r| println!("{}", info_line(r)));
+                    // Sparring (B15): when she is more than a pawn up she may play a slightly weaker move instead,
+                    // and the last `info` line then describes that move.
+                    let started = Instant::now();
+                    if let Some(s) = &spar
+                        && !halted.load(Ordering::Relaxed)
+                        && let Some(c) = chess::spar::choose(&mut searcher, &root, &r, s)
+                    {
+                        // The choosing is part of the move's cost, so the line counts its nodes and its time.
+                        r = Report {
+                            score: c.score,
+                            pv: c.pv,
+                            nodes: r.nodes + c.nodes,
+                            elapsed: r.elapsed + started.elapsed(),
+                            ..r
+                        };
+                        println!("{}", info_line(&r));
+                    }
                     if narrate {
                         // Their move first, then mine, joined by a bar; the bot splits them again.
                         let theirs = theirs.map(|(b, m)| chess::narrate::say_theirs(&b, m).text);

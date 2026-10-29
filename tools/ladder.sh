@@ -5,6 +5,7 @@
 #   TC      fastchess time control, e.g. 10+0.1
 #   ROUNDS  openings per level; each is played twice with colors reversed
 # Example: tools/ladder.sh sweep 10+0.1 20 1320 1500 1700 1900 2100 2300
+# ENGINE=path plays another build of the engine (B18: a copy, so a rebuild cannot change it mid-run).
 set -eu
 here=$(cd "$(dirname "$0")/.." && pwd)
 run=$1
@@ -15,7 +16,7 @@ out="$here/matches/$run"
 mkdir -p "$out"
 for level in "$@"; do
     "$here/.tools/fastchess-mac-arm64/fastchess" \
-        -engine cmd="$here/target/release/uci" name=chess \
+        -engine cmd="${ENGINE:-$here/target/release/uci}" name=chess \
         -engine cmd="$here/.tools/stockfish/stockfish-macos-universal" name="sf$level" \
         option.Threads=1 option.Hash=16 option.UCI_LimitStrength=true option.UCI_Elo="$level" \
         -each tc="$tc" \

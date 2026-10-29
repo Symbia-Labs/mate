@@ -8,18 +8,23 @@
 pub mod block;
 pub mod blocks;
 pub mod board;
+#[cfg(not(target_arch = "wasm32"))]
+pub mod coach;
 pub mod expr;
 pub mod graph;
 pub mod json;
+pub mod judge;
 pub mod movegen;
 pub mod narrate;
 pub mod perft;
 pub mod pgn;
 pub mod search;
+pub mod spar;
 pub mod spec;
 pub mod tables;
 #[cfg(target_arch = "wasm32")]
 pub mod wasm;
+pub mod why;
 
 pub use block::{ArgInfo, Block, BlockInfo, Frame};
 pub use board::{Board, Color, Move, MoveKind, Piece, Square};

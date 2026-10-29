@@ -29,7 +29,7 @@ pub struct Said {
     pub mentions: Vec<Mention>,
 }
 
-fn name(p: Piece) -> &'static str {
+pub(crate) fn name(p: Piece) -> &'static str {
     match p {
         Piece::Pawn => "pawn",
         Piece::Knight => "knight",
@@ -40,8 +40,28 @@ fn name(p: Piece) -> &'static str {
     }
 }
 
+/// A move from `before` in words: "knight to f3", "pawn takes knight on d5", "castling kingside".
+pub fn move_words(before: &Board, m: Move) -> String {
+    let mover = before.piece_on(m.from).map_or("piece", |(_, p)| name(p));
+    let to = square_name(m.to);
+    let plain = match m.kind {
+        MoveKind::CastleKing => return "castling kingside".to_string(),
+        MoveKind::CastleQueen => return "castling queenside".to_string(),
+        MoveKind::EnPassant => format!("pawn takes pawn en passant on {}", to),
+        MoveKind::Capture => {
+            let taken = before.piece_on(m.to).map_or("piece", |(_, p)| name(p));
+            format!("{} takes {} on {}", mover, taken, to)
+        }
+        MoveKind::Quiet | MoveKind::DoublePush => format!("{} to {}", mover, to),
+    };
+    match m.promo {
+        Some(p) => format!("{} and promotes to a {}", plain, name(p)),
+        None => plain,
+    }
+}
+
 /// The squares of `side`'s loose pieces: attacked and either undefended or attacked by something cheaper.
-fn loose(board: &Board, side: Color) -> Vec<Square> {
+pub(crate) fn loose(board: &Board, side: Color) -> Vec<Square> {
     loose_pieces(board, side, 1.0, 1.0)
         .into_iter()
         .map(|(sq, _)| sq)
@@ -49,7 +69,7 @@ fn loose(board: &Board, side: Color) -> Vec<Square> {
 }
 
 /// "queen on d6, rook on f5 and 2 more": the two most valuable pieces by name, then a count.
-fn list(
+pub(crate) fn list(
     board: &Board,
     squares: &[Square],
     side: Color,
@@ -85,22 +105,22 @@ fn list(
 }
 
 /// Whether the sentence still says "<piece> on <square>" (or "<piece> to <square>") for this mention.
-fn appears(text: &str, m: &Mention) -> bool {
+pub(crate) fn appears(text: &str, m: &Mention) -> bool {
     let (piece, square) = (name(m.piece), square_name(m.square));
     text.contains(&format!("{} on {}", piece, square))
         || text.contains(&format!("{} to {}", piece, square))
 }
 
-fn is_are(n: usize) -> &'static str {
+pub(crate) fn is_are(n: usize) -> &'static str {
     if n == 1 { "is" } else { "are" }
 }
 
-fn not_in(a: &[Square], b: &[Square]) -> Vec<Square> {
+pub(crate) fn not_in(a: &[Square], b: &[Square]) -> Vec<Square> {
     a.iter().copied().filter(|s| !b.contains(s)).collect()
 }
 
 /// Where each size word starts, in centipawns, largest first. Below the last the position is called equal.
-const STANDING: [(i32, &str); 4] = [
+pub(crate) const STANDING: [(i32, &str); 4] = [
     (350, "winning"),
     (180, "clearly better"),
     (80, "better"),
@@ -108,7 +128,7 @@ const STANDING: [(i32, &str); 4] = [
 ];
 
 /// Who is ahead, in words. `score` is in centipawns for the side that just moved, which the sentence calls "I".
-fn standing(score: i32) -> String {
+pub(crate) fn standing(score: i32) -> String {
     match STANDING.iter().find(|(from, _)| score.abs() >= *from) {
         None => "The position is about equal.".to_string(),
         Some((_, word)) => format!("{} {}.", if score > 0 { "I am" } else { "You are" }, word),
@@ -117,7 +137,7 @@ fn standing(score: i32) -> String {
 
 /// How far the search looked, in moves. The search counts plies; a move is a ply from each side, and an odd depth
 /// ends on the mover's own ply, so the count rounds up.
-fn looked(depth: u32) -> String {
+pub(crate) fn looked(depth: u32) -> String {
     let moves = depth.div_ceil(2);
     let unit = if moves == 1 { "move" } else { "moves" };
     format!("I looked {} {} ahead.", moves, unit)
@@ -125,6 +145,11 @@ fn looked(depth: u32) -> String {
 
 /// The sentence for the move `report` chose from `board`, or `None` when there is no move.
 pub fn say(board: &Board, report: &Report) -> Option<Said> {
+    say_within(board, report, MAX_CHARS)
+}
+
+/// `say`, with the line held to `max` characters. The coach passes the chat limit.
+pub fn say_within(board: &Board, report: &Report, max: usize) -> Option<Said> {
     let m = report.best()?;
     let me = board.turn;
     let opp = me.flip();
@@ -147,7 +172,7 @@ pub fn say(board: &Board, report: &Report) -> Option<Said> {
     };
     let promo = m
         .promo
-        .map(|p| format!("promoting to a {}", name(p)))
+        .map(|p| format!("promoted to a {}", name(p)))
         .unwrap_or_default();
     let new_threats = not_in(&opp_after, &opp_before);
     let rescued: Vec<Square> = me_before
@@ -185,45 +210,48 @@ pub fn say(board: &Board, report: &Report) -> Option<Said> {
             format!(" and {}.", promo)
         };
         Some(format!(
-            "Taking your {}{} on {}{}",
+            "I took your {}{} on {}{}",
             loose_word,
             name(p),
             square_name(m.to),
             tail
         ))
     } else if !promo.is_empty() {
-        let mut s = promo.clone();
-        s.replace_range(0..1, &s[0..1].to_uppercase());
-        Some(format!("{}.", s))
+        Some(format!("I {}.", promo))
     } else if !new_threats.is_empty() {
         let who = list(&after, &new_threats, opp, true, &mut said);
         named_opp = new_threats.clone();
         Some(format!(
-            "Attacking your {}, which {} loose.",
+            "I am attacking your {}, which {} loose.",
             who,
             is_are(new_threats.len().min(2))
         ))
     } else if moved_loose {
         board
             .piece_on(m.from)
-            .map(|(_, p)| format!("Moving my loose {} out of danger.", name(p)))
+            .map(|(_, p)| format!("I moved my loose {} out of danger.", name(p)))
     } else if !rescued.is_empty() {
         let who = list(&after, &rescued[..1], me, true, &mut said);
-        Some(format!("Defending my {}.", who))
+        Some(format!("I defended my {}.", who))
     } else if gives_check {
-        Some("Giving check.".to_string())
+        Some("I gave check.".to_string())
     } else if matches!(m.kind, MoveKind::CastleKing | MoveKind::CastleQueen) {
-        Some("Castling.".to_string())
+        let side = if m.kind == MoveKind::CastleKing {
+            "kingside"
+        } else {
+            "queenside"
+        };
+        Some(format!("I castled {}.", side))
     } else if opp_after.is_empty() && me_after.is_empty() {
-        Some("A quiet move.".to_string())
+        Some("I made a quiet move.".to_string())
     } else {
         None
     };
 
     // Whatever else is loose after the move is worth saying, whichever side owns it.
     let mut clauses: Vec<String> = Vec::new();
-    if gives_check && main.as_deref() != Some("Giving check.") {
-        clauses.push("Check.".to_string());
+    if gives_check && main.as_deref() != Some("I gave check.") {
+        clauses.push("It gives check.".to_string());
     }
     if !mate {
         let rest = not_in(&opp_after, &named_opp);
@@ -241,7 +269,7 @@ pub fn say(board: &Board, report: &Report) -> Option<Said> {
         }
     }
     if main.is_none() && clauses.is_empty() {
-        main = Some("A quiet move.".to_string());
+        main = Some("I made a quiet move.".to_string());
     }
 
     let mut parts: Vec<String> = main.into_iter().chain(clauses).collect();
@@ -262,17 +290,17 @@ pub fn say(board: &Board, report: &Report) -> Option<Said> {
             all.push(e.clone());
         }
         let candidate = all.join(" ");
-        if candidate.chars().count() <= MAX_CHARS {
+        if candidate.chars().count() <= max {
             text = candidate;
             break;
         }
     }
     if text.is_empty() {
         // Too long even without the score: keep whole clauses from the front.
-        while parts.len() > 1 && parts.join(" ").chars().count() > MAX_CHARS {
+        while parts.len() > 1 && parts.join(" ").chars().count() > max {
             parts.pop();
         }
-        text = parts.join(" ").chars().take(MAX_CHARS).collect();
+        text = parts.join(" ").chars().take(max).collect();
     }
     // A mention that did not survive the trimming is not a claim the sentence makes.
     said.retain(|s| appears(&text, s));
@@ -284,6 +312,24 @@ pub fn say(board: &Board, report: &Report) -> Option<Said> {
 
 /// The sentence about `m`, a move already played from `before`. "You" is the side that moved, "my" the other side.
 pub fn say_theirs(before: &Board, m: Move) -> Said {
+    say_theirs_within(before, m, MAX_CHARS)
+}
+
+/// `say_theirs`, with the line held to `max` characters.
+pub fn say_theirs_within(before: &Board, m: Move, max: usize) -> Said {
+    theirs(before, m, max, false).unwrap_or_else(|| Said {
+        text: String::new(),
+        mentions: Vec::new(),
+    })
+}
+
+/// The quiet form of `say_theirs_within`: `None` unless the move left a piece of the student's loose or attacked a
+/// loose piece of the tutor's. A piece that stays loose from one move to the next is not said again.
+pub fn say_theirs_quiet_within(before: &Board, m: Move, max: usize) -> Option<Said> {
+    theirs(before, m, max, true)
+}
+
+fn theirs(before: &Board, m: Move, max: usize, quiet: bool) -> Option<Said> {
     let you = before.turn;
     let me = you.flip();
     let mut after = before.clone();
@@ -378,7 +424,10 @@ pub fn say_theirs(before: &Board, m: Move) -> Said {
         .copied()
         .filter(|s| yours_before.contains(s))
         .collect();
-    if !old_yours.is_empty() {
+    if quiet && new_yours.is_empty() && new_mine.is_empty() {
+        return None;
+    }
+    if !quiet && !old_yours.is_empty() {
         let who = list(&after, &old_yours, you, true, &mut said);
         clauses.push(format!(
             "Your {} {} still loose.",
@@ -390,15 +439,15 @@ pub fn say_theirs(before: &Board, m: Move) -> Said {
     // Too long for the chat: the clauses at the end go first.
     let mut parts = vec![main];
     parts.extend(clauses);
-    while parts.len() > 1 && parts.join(" ").chars().count() > MAX_CHARS {
+    while parts.len() > 1 && parts.join(" ").chars().count() > max {
         parts.pop();
     }
-    let text: String = parts.join(" ").chars().take(MAX_CHARS).collect();
+    let text: String = parts.join(" ").chars().take(max).collect();
     said.retain(|s| appears(&text, s));
-    Said {
+    Some(Said {
         text,
         mentions: said,
-    }
+    })
 }
 
 #[cfg(test)]
@@ -432,7 +481,7 @@ mod tests {
         let s = sentence("4k3/8/8/3q4/8/4N3/8/4K3 w - - 0 1", "e3d5", 900);
         assert_eq!(
             s,
-            "Taking your loose queen on d5. I am winning. I looked 3 moves ahead."
+            "I took your loose queen on d5. I am winning. I looked 3 moves ahead."
         );
     }
 
@@ -441,7 +490,7 @@ mod tests {
         let s = sentence("4k3/8/8/3q4/8/8/8/R3K3 w - - 0 1", "a1d1", 60);
         assert_eq!(
             s,
-            "Attacking your queen on d5, which is loose. I am slightly better. I looked 3 moves ahead."
+            "I am attacking your queen on d5, which is loose. I am slightly better. I looked 3 moves ahead."
         );
     }
 
@@ -523,7 +572,7 @@ mod tests {
         let s = sentence("4k3/8/8/8/8/8/8/R3K3 w - - 0 1", "a1a8", 20);
         assert_eq!(
             s,
-            "Giving check. The position is about equal. I looked 3 moves ahead."
+            "I gave check. The position is about equal. I looked 3 moves ahead."
         );
     }
 
@@ -568,7 +617,7 @@ mod tests {
         let s = sentence("4k3/8/8/8/8/8/8/4K3 w - - 0 1", "e1e2", 0);
         assert_eq!(
             s,
-            "A quiet move. The position is about equal. I looked 3 moves ahead."
+            "I made a quiet move. The position is about equal. I looked 3 moves ahead."
         );
     }
 

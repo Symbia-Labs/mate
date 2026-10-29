@@ -3,7 +3,7 @@ url: "https://lichess.org/"        # Lichess base URL.
 
 engine:                            # Engine settings.
   dir: "../../target/release/"     # Directory containing the engine, relative to lichess-bot/. That is .tools/lichess-bot/ in this repository and in the installed package, so the same path works in both.
-  name: "Narrated"                 # The engine class in bot/homemade.py. It runs target/release/uci and posts the engine's sentence to the chat.
+  name: "Narrated"                 # The engine class in bot/homemade.py. It runs target/release/uci, and target/release/uci coach for the Game, You and Me lines in the chat.
   debug: False                     # When enabled, log all startup communication with the engine.
 # interpreter: "java"
 # interpreter_options:
@@ -94,7 +94,7 @@ engine:                            # Engine settings.
 
   homemade_options:                # Options for the Narrated class, passed to the engine.
     Graph: "default"
-    Narrate: true                  # The engine prints a sentence per move; Narrated posts it to the player chat.
+    Narrate: false                 # Off: the coach (uci coach) writes the sentences, one lane each. Narrated starts it and posts what it says.
 
   uci_options:                     # Arbitrary UCI options passed to the engine.
     Graph: "default"               # The engine's own options are Graph, sharp and safety; it has no others.
@@ -187,7 +187,7 @@ greeting:
   # Any other words in curly braces will be removed.
   hello: "Hello. I am {me}, an experimental chess engine written in Rust by Symbia Labs. Good luck." # Message to send to opponent chat at the start of a game (the rest of the introduction is INTRO in homemade.py; Lichess chat takes 140 characters a message)
   goodbye: "Good game!" # Message to send to opponent chat at the end of a game
-  hello_spectators: "Hello. {me} is an experimental chess engine from Symbia Labs (https://symbia-labs.com). It narrates each move in plain English." # Message to send to spectator chat at the start of a game
+  hello_spectators: "Hello. {me} is an experimental chess engine from Symbia Labs (https://symbia-labs.com). It speaks when something happens and says why." # Message to send to spectator chat at the start of a game
   goodbye_spectators: "Thanks for watching!" # Message to send to spectator chat at the end of a game
 
 pgn_directory: "../../bot/games"  # A directory where PGN-format records of the bot's games are kept. Relative to the directory lichess-bot runs in, lichess-bot/.
